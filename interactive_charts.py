@@ -59,7 +59,7 @@ def chart_line_comparison(df):
     fig = make_subplots(
         rows=1, cols=2,
         specs=[[{"type": "bar"}, {"type": "pie"}]],
-        subplot_titles=("總延遲分鐘數", "事故比例分佈")
+        subplot_titles=("Total Delay Minutes", "Incident Distribution")
     )
     
     # 柱狀圖
@@ -70,7 +70,7 @@ def chart_line_comparison(df):
             marker_color=[COLORS.get(line, "#888") for line in line_stats["Line"]],
             text=line_stats["Total Delay"].apply(lambda x: f"{x:,.0f}"),
             textposition="outside",
-            hovertemplate="<b>%{x}</b><br>總延遲: %{y:,.0f} 分鐘<extra></extra>"
+            hovertemplate="<b>%{x}</b><br>Total Delay: %{y:,.0f} min<extra></extra>"
         ),
         row=1, col=1
     )
@@ -82,13 +82,13 @@ def chart_line_comparison(df):
             values=line_stats["Incident Count"],
             marker_colors=[COLORS.get(line, "#888") for line in line_stats["Line"]],
             textinfo="percent+label",
-            hovertemplate="<b>%{label}</b><br>事故次數: %{value}<br>佔比: %{percent}<extra></extra>"
+            hovertemplate="<b>%{label}</b><br>Incidents: %{value}<br>Percent: %{percent}<extra></extra>"
         ),
         row=1, col=2
     )
     
     fig.update_layout(
-        title_text="🚇 TTC 地鐵路線延遲分析",
+        title_text="🚇 TTC Subway Line Delay Analysis",
         title_font_size=24,
         showlegend=False,
         height=500
@@ -114,13 +114,13 @@ def chart_monthly_trend(df):
         color="Line",
         color_discrete_map=COLORS,
         markers=True,
-        title="📈 月度延遲趨勢",
-        labels={"Total Delay": "總延遲 (分鐘)", "Month": "月份"}
+        title="📈 Monthly Delay Trend",
+        labels={"Total Delay": "Total Delay (min)", "Month": "Month"}
     )
     
     fig.update_layout(
         hovermode="x unified",
-        legend_title_text="路線",
+        legend_title_text="Line",
         height=500
     )
     
@@ -142,11 +142,11 @@ def chart_hourly_heatmap(df):
     
     fig = px.imshow(
         hourly_pivot,
-        labels=dict(x="小時", y="星期", color="延遲分鐘"),
+        labels=dict(x="Hour", y="Day", color="Delay (min)"),
         x=[f"{h:02d}:00" for h in hourly_pivot.columns],
-        y=["週一", "週二", "週三", "週四", "週五", "週六", "週日"],
+        y=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         color_continuous_scale="YlOrRd",
-        title="🔥 延遲熱力圖 (按星期 × 時段)"
+        title="🔥 Delay Heatmap (Day × Hour)"
     )
     
     fig.update_layout(height=400)
@@ -189,7 +189,7 @@ def chart_station_reliability(df):
     
     fig = make_subplots(
         rows=1, cols=2,
-        subplot_titles=("⚠️ 最不可靠的 15 個車站", "✅ 最可靠的 15 個車站"),
+        subplot_titles=("⚠️ 15 Least Reliable Stations", "✅ 15 Most Reliable Stations"),
         horizontal_spacing=0.15
     )
     
@@ -202,7 +202,7 @@ def chart_station_reliability(df):
             marker_color="crimson",
             text=worst["Reliability Score"].apply(lambda x: f"{x:.1f}"),
             textposition="outside",
-            hovertemplate="<b>%{y}</b><br>可靠性: %{x:.1f}<extra></extra>"
+            hovertemplate="<b>%{y}</b><br>Reliability: %{x:.1f}<extra></extra>"
         ),
         row=1, col=1
     )
@@ -216,13 +216,13 @@ def chart_station_reliability(df):
             marker_color="seagreen",
             text=best["Reliability Score"].apply(lambda x: f"{x:.1f}"),
             textposition="outside",
-            hovertemplate="<b>%{y}</b><br>可靠性: %{x:.1f}<extra></extra>"
+            hovertemplate="<b>%{y}</b><br>Reliability: %{x:.1f}<extra></extra>"
         ),
         row=1, col=2
     )
     
     fig.update_layout(
-        title_text="🏆 車站可靠性排名 (過濾後)",
+        title_text="🏆 Station Reliability Ranking (Filtered)",
         height=600,
         showlegend=False
     )
@@ -241,13 +241,13 @@ def chart_peak_comparison(df):
     }).reset_index()
     peak_stats.columns = ["Is Peak Hour", "Total Delay", "Incident Count", "Avg Delay"]
     peak_stats["Period"] = peak_stats["Is Peak Hour"].apply(
-        lambda x: "尖峰時段 (07-09, 16-19)" if x else "離峰時段"
+        lambda x: "Peak (07-09, 16-19)" if x else "Off-Peak"
     )
     
     fig = make_subplots(
         rows=1, cols=3,
         specs=[[{"type": "pie"}, {"type": "bar"}, {"type": "bar"}]],
-        subplot_titles=("事故分佈", "總延遲", "平均延遲/次")
+        subplot_titles=("Incident Distribution", "Total Delay", "Avg Delay/Incident")
     )
     
     colors = ["#FF6B6B", "#4ECDC4"]
@@ -285,7 +285,7 @@ def chart_peak_comparison(df):
     )
     
     fig.update_layout(
-        title_text="⏰ 尖峰 vs 離峰時段分析",
+        title_text="⏰ Peak vs Off-Peak Analysis",
         height=400,
         showlegend=False
     )
@@ -309,12 +309,12 @@ def chart_delay_causes(df):
         values="Total Delay",
         color="Total Delay",
         color_continuous_scale="Reds",
-        title="🔍 Top 15 延遲原因 (按總延遲時間)"
+        title="🔍 Top 15 Delay Causes (by Total Duration)"
     )
     
     fig.update_layout(height=600)
     fig.update_traces(
-        hovertemplate="<b>%{label}</b><br>總延遲: %{value:,.0f} 分鐘<extra></extra>"
+        hovertemplate="<b>%{label}</b><br>Total Delay: %{value:,.0f} min<extra></extra>"
     )
     
     fig.write_html(os.path.join(output_dir, "06_delay_causes.html"))
@@ -336,7 +336,7 @@ def create_dashboard(df):
             [{"type": "indicator"}, {"type": "indicator"}],
             [{"type": "indicator"}, {"type": "indicator"}]
         ],
-        subplot_titles=("總事故次數", "總延遲時間", "平均延遲", "尖峰時段事故")
+        subplot_titles=("Total Incidents", "Total Delay Time", "Average Delay", "Peak Hour Incidents")
     )
     
     # 指標卡
@@ -344,20 +344,20 @@ def create_dashboard(df):
         mode="number",
         value=total_incidents,
         number={"font": {"size": 60, "color": "#2C3E50"}},
-        title={"text": "次", "font": {"size": 20}}
+        title={"text": "Incidents", "font": {"size": 20}}
     ), row=1, col=1)
     
     fig.add_trace(go.Indicator(
         mode="number",
         value=total_delay,
-        number={"font": {"size": 60, "color": "#E74C3C"}, "suffix": " 分鐘"},
+        number={"font": {"size": 60, "color": "#E74C3C"}, "suffix": " min"},
         title={"text": "", "font": {"size": 20}}
     ), row=1, col=2)
     
     fig.add_trace(go.Indicator(
         mode="number",
         value=avg_delay,
-        number={"font": {"size": 60, "color": "#3498DB"}, "suffix": " 分鐘/次"},
+        number={"font": {"size": 60, "color": "#3498DB"}, "suffix": " min/inc"},
         title={"text": "", "font": {"size": 20}}
     ), row=2, col=1)
     
@@ -369,7 +369,7 @@ def create_dashboard(df):
     ), row=2, col=2)
     
     fig.update_layout(
-        title_text="📊 TTC 地鐵延遲數據總覽",
+        title_text="📊 TTC Subway Delay Overview",
         title_font_size=28,
         height=500
     )
