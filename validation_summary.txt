@@ -1,0 +1,27 @@
+--- Clean Data Verification ---
+Original Rows (all files): 47730
+After Subway Line Filter: 46951
+Non-Subway Rows Removed: 779
+Rows with Min Delay=0 (Dropped): 30142
+Final Saved Rows: 16809
+Verification: PASSED
+
+--- Line Distribution ---
+Line
+Line 1 Yonge-University    9816
+Line 2 Bloor-Danforth      6411
+Line 4 Sheppard             582
+
+--- Peak Hour Distribution ---
+Peak Hour incidents: 4872
+Off-Peak incidents: 11937
+
+Rows with Unknown Codes (in final data): 0
+
+Sample Data:
+          Date   Time        Day     Station   Code  Min Delay  Min Gap Bound                     Line Vehicle  Is Peak Hour                    Code Description
+0   2025-01-01  02:10  Wednesday    BATHURST  MUSAN          5        9     E    Line 2 Bloor-Danforth    5227         False                  Unsanitary Vehicle
+5   2025-01-01  07:59  Wednesday    DONLANDS  TUNOA          5       10     W    Line 2 Bloor-Danforth    5000          True  No Operator Immediately Available 
+6   2025-01-01  08:13  Wednesday       BLOOR   PUTR          9        0     S  Line 1 Yonge-University    5836          True                Rail Related Problem
+7   2025-01-01  08:15  Wednesday       BLOOR   PUTR          5        0     N  Line 1 Yonge-University    5706          True                Rail Related Problem
+12  2025-01-01  12:56  Wednesday  VAUGHAN MC    MUO          4        8     S  Line 1 Yonge-University    5706         False                 Miscellaneous Other

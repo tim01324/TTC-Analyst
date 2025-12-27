@@ -1,0 +1,80 @@
+Loading data...
+
+Data Loaded. Total Rows: 16812
+Total Delay Minutes: 132383
+
+========================================
+1. TIME DIMENSION ANALYSIS
+========================================
+
+[Worst Months by Total Delay Minutes]
+          sum  count
+Month               
+2025-02  8766    917
+2024-05  7126    858
+2024-04  7119    781
+2024-12  6987    815
+2024-08  6591    853
+
+[Worst Days of Week by Total Delay Minutes]
+             sum  count
+DayOfWeek              
+Tuesday    21223   2704
+Thursday   20748   2560
+Wednesday  20099   2628
+Friday     19610   2624
+Monday     18687   2487
+Sunday     16269   1737
+Saturday   15747   2072
+
+[Peak vs Off-Peak Stats]
+            sum  count      mean
+Period                          
+Off-Peak  93055  11349  8.199401
+Peak      39328   5463  7.198975
+
+========================================
+2. SPATIAL DIMENSION ANALYSIS
+========================================
+
+[Delays by Subway Line]
+                sum  count
+Line                      
+YU            75528   9813
+BD            51501   6411
+SHP            5276    582
+20 CLIFFSIDE     32      1
+109 RANEE        25      1
+YUS              18      3
+
+========================================
+3. CAUSE ANALYSIS
+========================================
+
+[Top 10 Causes by FREQUENCY (Count)]
+Code Description
+Disorderly Patron                                           2204
+Passenger Assistance Alarm Activated - No Trouble Found     1499
+OPTO (COMMS) Train Door Monitoring                          1358
+Injured or ill Customer (On Train) - Medical Aid Refused    1091
+Passenger Other                                              919
+Unsanitary Vehicle                                           719
+Injured or ill Customer (On Train) - Transported             657
+Unauthorized at Track Level                                  656
+Transportation Department - Other                            526
+Miscellaneous Other                                          413
+Name: count, dtype: int64
+
+[Top 10 Causes by DURATION (Total Minutes)]
+Code Description
+Disorderly Patron                                           14624
+Unauthorized at Track Level                                  8920
+Passenger Other                                              8825
+Injured or ill Customer (On Train) - Medical Aid Refused     7942
+OPTO (COMMS) Train Door Monitoring                           7922
+Injured or ill Customer (On Train) - Transported             7593
+Passenger Assistance Alarm Activated - No Trouble Found      6138
+Priority One - Train in Contact With Person                  3707
+Fire/Smoke Plan B - Source TTC                               3498
+Work Zone Problems - Track                                   3475
+Name: Min Delay, dtype: int64

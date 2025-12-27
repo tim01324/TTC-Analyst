@@ -1,0 +1,18 @@
+--- ANSWERS START ---
+Top Month: 2025-02
+Top Day: Tuesday
+Peak Delay: 39328
+Off-Peak Delay: 93055
+Top Line: YU
+Top 10 Causes by Duration:
+CAUSE: Disorderly Patron || MINS: 14624
+CAUSE: Unauthorized at Track Level || MINS: 8920
+CAUSE: Passenger Other || MINS: 8825
+CAUSE: Injured or ill Customer (On Train) - Medical Aid Refused || MINS: 7942
+CAUSE: OPTO (COMMS) Train Door Monitoring || MINS: 7922
+CAUSE: Injured or ill Customer (On Train) - Transported || MINS: 7593
+CAUSE: Passenger Assistance Alarm Activated - No Trouble Found || MINS: 6138
+CAUSE: Priority One - Train in Contact With Person || MINS: 3707
+CAUSE: Fire/Smoke Plan B - Source TTC || MINS: 3498
+CAUSE: Work Zone Problems - Track || MINS: 3475
+--- ANSWERS END ---
