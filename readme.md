@@ -8,6 +8,10 @@ This project turns raw TTC subway delay logs into a reproducible analyst workflo
 
 The target audience is a hiring manager or interviewer reviewing a Data Analyst / BI portfolio in 3 to 5 minutes.
 
+## Live Demo
+
+Streamlit app: https://ttc-analyst-fd7ka9hbucujfv2ptgupjz.streamlit.app/
+
 ## Quick Start
 
 ```bash
@@ -56,6 +60,7 @@ These rules now live in shared configuration so every script uses the same defin
 
 ## Evidence To Show In Interviews
 
+- Live app: https://ttc-analyst-fd7ka9hbucujfv2ptgupjz.streamlit.app/
 - Main overview: [charts/00_dashboard.html](/Users/tim/Desktop/TTC-Analyst/charts/00_dashboard.html)
 - Peak risk evidence: [charts/03_hourly_heatmap.html](/Users/tim/Desktop/TTC-Analyst/charts/03_hourly_heatmap.html)
 - Reliability ranking: [charts/04_station_reliability.html](/Users/tim/Desktop/TTC-Analyst/charts/04_station_reliability.html)
