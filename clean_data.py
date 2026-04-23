@@ -1,87 +1,64 @@
-import pandas as pd
-import os
+from __future__ import annotations
+
+from pathlib import Path
+
 import numpy as np
-import glob
+import pandas as pd
 
-# Define file paths
-data_dir = r"c:\Users\tim01\Desktop\TTC"
-codes_excel = os.path.join(data_dir, "ttc-subway-delay-codes.xlsx")
-codes_csv = os.path.join(data_dir, "Code Descriptions.csv")
-output_file = os.path.join(data_dir, "TTC_Subway_Delay_Data_Combined_Cleaned.csv")
+from pipeline_utils import ensure_project_directories, find_raw_data_files, save_text_report
+from project_config import (
+    CLEANED_DATA_FILE,
+    LINE_MAPPING,
+    PRIMARY_CODES_FILE,
+    PROJECT_ROOT,
+    SECONDARY_CODES_FILE,
+    SUBWAY_LINES,
+    VALIDATION_REPORT_FILE,
+)
 
 
-def load_codes():
-    print("Loading codes maps...")
-    code_map = {}
+def load_codes() -> dict[str, str]:
+    print("Loading code descriptions...")
+    code_map: dict[str, str] = {}
 
-    # 1. Load Secondary (CSV) first - will be overwritten by Primary if duplicates exist
-    # Or load Primary first, then fill missing from Secondary.
-    # User said: "Check first code file, if not found, check second".
-    # So Primary takes precedence.
-
-    # Load Secondary (CSV)
-    try:
-        df_csv = pd.read_csv(codes_csv)
-        # CSV format: _id, CODE, DESCRIPTION
-        # Clean col names if needed
+    if SECONDARY_CODES_FILE.exists():
+        df_csv = pd.read_csv(SECONDARY_CODES_FILE)
         df_csv.columns = df_csv.columns.str.strip().str.upper()
-        if "CODE" in df_csv.columns and "DESCRIPTION" in df_csv.columns:
+        if {"CODE", "DESCRIPTION"}.issubset(df_csv.columns):
             df_csv["CODE"] = df_csv["CODE"].astype(str).str.strip()
-            # Add to map
             secondary_map = dict(zip(df_csv["CODE"], df_csv["DESCRIPTION"]))
-            print(f"Loaded {len(secondary_map)} codes from CSV (Secondary).")
             code_map.update(secondary_map)
-        else:
-            print("Warning: unexpected columns in CSV codes file.")
-    except Exception as e:
-        print(f"Error loading CSV codes: {e}")
+            print(f"Loaded {len(secondary_map)} codes from {SECONDARY_CODES_FILE.name}.")
 
-    # Load Primary (Excel) - Overwrite CSV entries if conflict
-    try:
-        # Based on previous inspection structure
-        df_ex = pd.read_excel(codes_excel, header=None)
+    if PRIMARY_CODES_FILE.exists():
+        df_excel = pd.read_excel(PRIMARY_CODES_FILE, header=None)
 
-        # Subway: Col 2 & 3 (indices 2,3), skip header rows
-        sub = df_ex.iloc[2:, [2, 3]].dropna()
-        sub.columns = ["Code", "Description"]
+        subway_codes = df_excel.iloc[2:, [2, 3]].dropna()
+        subway_codes.columns = ["Code", "Description"]
 
-        # SRT: Col 6 & 7 (indices 6,7)
-        srt = df_ex.iloc[2:, [6, 7]].dropna()
-        srt.columns = ["Code", "Description"]
+        srt_codes = df_excel.iloc[2:, [6, 7]].dropna()
+        srt_codes.columns = ["Code", "Description"]
 
-        combined = pd.concat([sub, srt])
-        combined["Code"] = combined["Code"].astype(str).str.strip()
+        primary_codes = pd.concat([subway_codes, srt_codes], ignore_index=True)
+        primary_codes["Code"] = primary_codes["Code"].astype(str).str.strip()
 
-        primary_map = dict(zip(combined["Code"], combined["Description"]))
-        print(f"Loaded {len(primary_map)} codes from Excel (Primary).")
-
-        # Update map (Excel overrides CSV)
+        primary_map = dict(zip(primary_codes["Code"], primary_codes["Description"]))
         code_map.update(primary_map)
+        print(f"Loaded {len(primary_map)} codes from {PRIMARY_CODES_FILE.name}.")
 
-    except Exception as e:
-        print(f"Error loading Excel codes: {e}")
-
-    # Manual Corrections (if any remain)
-    manual_updates = {
-        "XXXXX": "General/Unknown Error",
-        # MUNCA, TUNCA etc are in CSV, so they should be covered now
-    }
-    code_map.update(manual_updates)
-
-    print(f"Total unique codes loaded: {len(code_map)}")
+    code_map["XXXXX"] = "General/Unknown Error"
+    print(f"Total unique codes available: {len(code_map)}")
     return code_map
 
 
-def get_code_desc(code, mapping):
-    if pd.isna(code) or code == "nan" or code == "":
+def get_code_description(code: object, mapping: dict[str, str]) -> str:
+    if pd.isna(code) or str(code).strip() in {"", "nan"}:
         return "Unknown Code"
-    code = str(code).strip()
 
-    if code in mapping:
-        return mapping[code]
+    normalized_code = str(code).strip()
+    if normalized_code in mapping:
+        return mapping[normalized_code]
 
-    # Heuristic Fallback
-    prefix = code[:2]
     prefix_map = {
         "MU": "Miscellaneous / Transportation",
         "TU": "Track / Signal",
@@ -90,238 +67,156 @@ def get_code_desc(code, mapping):
         "SU": "Subway Service",
         "ER": "SRT Equipment",
     }
+    prefix = normalized_code[:2]
     if prefix in prefix_map:
         return f"{prefix_map[prefix]} - Unknown Subcode"
 
     return "Unknown Code"
 
 
-def find_data_files():
-    # Find files matching "ttc subway delay data" (case insensitive)
-    # This matches user requirement: "判斷 檔案 名稱為 ttc subway delay data"
-    all_files = glob.glob(os.path.join(data_dir, "*"))
-    data_files = []
+def load_raw_data(files: list[Path]) -> pd.DataFrame:
+    dataframes: list[pd.DataFrame] = []
 
-    print("Scanning for data files...")
-    for f in all_files:
-        fname = os.path.basename(f).lower()
-        # Simple heuristic or specific keywords
-        if (
-            "ttc" in fname
-            and "subway" in fname
-            and "delay" in fname
-            and "data" in fname
-        ):
-            if f.endswith(".csv") or f.endswith(".xlsx"):
-                # Exclude the output file itself if it exists
-                if "cleaned" in fname:
-                    continue
-                print(f"Found data file: {os.path.basename(f)}")
-                data_files.append(f)
-    return data_files
+    for file_path in files:
+        print(f"Reading {file_path.name}...")
+        if file_path.suffix.lower() == ".xlsx":
+            df = pd.read_excel(file_path)
+        else:
+            df = pd.read_csv(file_path)
+
+        if "_id" in df.columns:
+            df = df.drop(columns=["_id"])
+
+        dataframes.append(df)
+
+    if not dataframes:
+        raise ValueError("No raw delay files could be loaded.")
+
+    return pd.concat(dataframes, ignore_index=True)
 
 
-def is_peak_hour(time_str):
-    """判斷是否為尖峰時段 (07:00-09:00 或 16:00-19:00)"""
-    try:
-        h = int(str(time_str).split(":")[0])
-        if (7 <= h < 9) or (16 <= h < 19):
-            return True
-    except:
-        pass
-    return False
+def standardize_strings(df: pd.DataFrame) -> pd.DataFrame:
+    cleaned = df.copy()
+    categorical_columns = ["Station", "Code", "Bound", "Line", "Vehicle"]
 
+    for column in categorical_columns:
+        if column in cleaned.columns:
+            cleaned[column] = cleaned[column].astype(str).str.strip().str.upper()
+            cleaned[column] = cleaned[column].replace(["NAN", "NONE", ""], np.nan)
 
-def clean_and_merge():
-    # 1. Identify Files
-    files = find_data_files()
-    if not files:
-        print("No data files found!")
-        return
-
-    # 2. Load Data
-    dfs = []
-    for f in files:
-        try:
-            if f.endswith(".xlsx"):
-                d = pd.read_excel(f)
-            else:
-                d = pd.read_csv(f)
-
-            # Standardize columns? 2025 has _id
-            if "_id" in d.columns:
-                d.drop(columns=["_id"], inplace=True)
-
-            dfs.append(d)
-        except Exception as e:
-            print(f"Error reading {f}: {e}")
-
-    # 3. Merge
-    if not dfs:
-        return
-
-    df_combined = pd.concat(dfs, ignore_index=True)
-    total_original_rows = len(df_combined)
-    print(f"\n--- Total Rows Loaded: {total_original_rows} ---")
-
-    # 4. Standardize / Trim Strings
-    print("Trimming string columns...")
-    cat_cols = ["Station", "Code", "Bound", "Line", "Vehicle"]
-    # Check if columns exist before processing
-    for col in cat_cols:
-        if col in df_combined.columns:
-            # Convert to string, trim whitespace, upper case for consistency
-            df_combined[col] = df_combined[col].astype(str).str.strip().str.upper()
-            # Replace 'NAN', 'NONE' strings with real NaN
-            df_combined[col] = df_combined[col].replace(["NAN", "NONE", ""], np.nan)
-        
-        # Specific Normalization for Station Name
-        if "Station" in df_combined.columns:
-            # Remove " STATION" suffix if exists
-            df_combined["Station"] = df_combined["Station"].str.replace(r"\s+STATION$", "", regex=True)
-            # Standardize common variations
-            station_map = {
-                "ST GEORGE": "ST. GEORGE",
-                "ST CLAIR": "ST. CLAIR",
-                "ST ANDREW": "ST. ANDREW",
-                "ST PATRICK": "ST. PATRICK",
-                "BLOOR-YONGE": "BLOOR", # Often referred as Bloor Station
-                "KENNEDY BD": "KENNEDY",
-                "VMC": "VAUGHAN METROPOLITAN CENTRE",
-            }
-            # Optional: More aggressive cleaning
-            # df_combined["Station"] = df_combined["Station"].replace(station_map)
-
-    # Date Standardize
-    if "Date" in df_combined.columns:
-        df_combined["Date"] = pd.to_datetime(df_combined["Date"]).dt.date
-
-    # 5. 路線名稱標準化 (Line Rename)
-    # Line 1: Yonge-University - 地鐵 (Subway) - 營運中
-    # Line 2: Bloor-Danforth - 地鐵 (Subway) - 營運中
-    # Line 3: Scarborough RT - 輕軌 (LRT) - 已永久關閉 (2023 年退役)
-    # Line 4: Sheppard - 地鐵 (Subway) - 營運中
-    # Line 5: Eglinton Crosstown - 輕軌 (LRT) - 尚未開通
-    # Line 6: Finch West - 輕軌 (LRT) - 營運中 (2025 年 12 月 7 日開通)
-    print("\n--- Renaming Lines ---")
-    line_mapping = {
-        "YU": "Line 1 Yonge-University",
-        "YUS": "Line 1 Yonge-University",
-        "BD": "Line 2 Bloor-Danforth",
-        "SHP": "Line 4 Sheppard",
-        "SRT": "Line 3 Scarborough RT",  # 已關閉，會被過濾掉
-    }
-
-    if "Line" in df_combined.columns:
-        # 記錄原始的 Line 分佈
-        print("Original Line Distribution:")
-        print(df_combined["Line"].value_counts())
-
-        # 應用映射
-        df_combined["Line"] = df_combined["Line"].replace(line_mapping)
-
-        print("\nAfter Renaming:")
-        print(df_combined["Line"].value_counts())
-
-    # 6. 只保留地鐵資料 (Filter Subway Only - Lines 1, 2, 4)
-    subway_lines = [
-        "Line 1 Yonge-University",
-        "Line 2 Bloor-Danforth",
-        "Line 4 Sheppard",
-    ]
-
-    print("\n--- Filtering Subway Lines Only ---")
-    rows_before_filter = len(df_combined)
-    df_combined = df_combined[df_combined["Line"].isin(subway_lines)].copy()
-    rows_after_filter = len(df_combined)
-
-    print(f"Rows before subway filter: {rows_before_filter}")
-    print(f"Rows after subway filter: {rows_after_filter}")
-    print(f"Rows removed (non-subway): {rows_before_filter - rows_after_filter}")
-
-    print("\nFinal Line Distribution (Subway Only):")
-    print(df_combined["Line"].value_counts())
-
-    # 7. 新增尖峰時段欄位 (Add Peak Hour Column)
-    print("\n--- Adding Peak Hour Column ---")
-    if "Time" in df_combined.columns:
-        df_combined["Is Peak Hour"] = df_combined["Time"].apply(is_peak_hour)
-        peak_count = df_combined["Is Peak Hour"].sum()
-        offpeak_count = len(df_combined) - peak_count
-        print(f"Peak Hour incidents: {peak_count}")
-        print(f"Off-Peak incidents: {offpeak_count}")
-
-    # 8. Map Codes
-    code_map = load_codes()
-    if "Code" in df_combined.columns:
-        df_combined["Code Description"] = df_combined["Code"].apply(
-            lambda c: get_code_desc(c, code_map)
+    if "Station" in cleaned.columns:
+        cleaned["Station"] = cleaned["Station"].str.replace(
+            r"\s+STATION$", "", regex=True
         )
 
-    # 9. Filter Verification Logic
-    # User Request: "delay = 0 刪除後的檔案數量" & "判斷加起來的line 數量應該是一樣的"
+    if "Date" in cleaned.columns:
+        cleaned["Date"] = pd.to_datetime(cleaned["Date"]).dt.date
 
-    print("\n--- Filtering Data (Remove Min Delay = 0) ---")
-    # Cast Min Delay to number just in case
-    df_combined["Min Delay"] = pd.to_numeric(
-        df_combined["Min Delay"], errors="coerce"
+    return cleaned
+
+
+def build_validation_lines(
+    total_original_rows: int,
+    subway_rows_before_delay_filter: int,
+    non_subway_rows_removed: int,
+    count_dropped: int,
+    count_kept: int,
+    df_kept: pd.DataFrame,
+) -> list[str]:
+    verification_passed = count_kept + count_dropped == subway_rows_before_delay_filter
+
+    lines = [
+        "--- Clean Data Verification ---",
+        f"Original Rows (all files): {total_original_rows}",
+        f"After Subway Line Filter: {subway_rows_before_delay_filter}",
+        f"Non-Subway Rows Removed: {non_subway_rows_removed}",
+        f"Rows with Min Delay=0 (Dropped): {count_dropped}",
+        f"Final Saved Rows: {count_kept}",
+        f"Verification: {'PASSED' if verification_passed else 'FAILED'}",
+        "",
+        "--- Line Distribution ---",
+        df_kept["Line"].value_counts().to_string(),
+        "",
+        "--- Peak Hour Distribution ---",
+        f"Peak Hour incidents: {int(df_kept['Is Peak Hour'].sum())}",
+        f"Off-Peak incidents: {int((~df_kept['Is Peak Hour']).sum())}",
+        "",
+        f"Rows with Unknown Codes (in final data): {len(df_kept[df_kept['Code Description'].str.contains('Unknown Code')])}",
+        "",
+        "Sample Data:",
+        df_kept.head().to_string(),
+    ]
+    return lines
+
+
+def clean_and_merge() -> Path:
+    ensure_project_directories()
+
+    raw_files = find_raw_data_files()
+    if not raw_files:
+        raise FileNotFoundError(
+            "No raw delay data files found. Add TTC delay files to the project root or `data/raw/`."
+        )
+
+    print("Raw data files discovered:")
+    for file_path in raw_files:
+        try:
+            display_path = file_path.relative_to(PROJECT_ROOT)
+        except ValueError:
+            display_path = file_path
+        print(f"- {display_path}")
+
+    combined = load_raw_data(raw_files)
+    total_original_rows = len(combined)
+    print(f"Total rows loaded: {total_original_rows}")
+
+    combined = standardize_strings(combined)
+
+    if "Line" in combined.columns:
+        print("Applying line mapping...")
+        combined["Line"] = combined["Line"].replace(LINE_MAPPING)
+
+    subway_rows_before_line_filter = len(combined)
+    combined = combined[combined["Line"].isin(SUBWAY_LINES)].copy()
+    subway_rows_after_line_filter = len(combined)
+    non_subway_rows_removed = (
+        subway_rows_before_line_filter - subway_rows_after_line_filter
+    )
+
+    if "Time" in combined.columns:
+        from pipeline_utils import is_peak_hour
+
+        combined["Is Peak Hour"] = combined["Time"].apply(is_peak_hour)
+
+    code_map = load_codes()
+    if "Code" in combined.columns:
+        combined["Code Description"] = combined["Code"].apply(
+            lambda code: get_code_description(code, code_map)
+        )
+
+    combined["Min Delay"] = pd.to_numeric(
+        combined["Min Delay"], errors="coerce"
     ).fillna(0)
 
-    subway_rows_before_delay_filter = len(df_combined)
+    df_kept = combined[combined["Min Delay"] != 0].copy()
+    df_dropped = combined[combined["Min Delay"] == 0].copy()
 
-    # Split Data
-    df_kept = df_combined[df_combined["Min Delay"] != 0].copy()
-    df_dropped = df_combined[df_combined["Min Delay"] == 0].copy()
+    CLEANED_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    df_kept.to_csv(CLEANED_DATA_FILE, index=False)
 
-    count_kept = len(df_kept)
-    count_dropped = len(df_dropped)
+    report_lines = build_validation_lines(
+        total_original_rows=total_original_rows,
+        subway_rows_before_delay_filter=len(combined),
+        non_subway_rows_removed=non_subway_rows_removed,
+        count_dropped=len(df_dropped),
+        count_kept=len(df_kept),
+        df_kept=df_kept,
+    )
+    save_text_report(VALIDATION_REPORT_FILE, report_lines)
 
-    print(f"Subway Rows (before delay filter): {subway_rows_before_delay_filter}")
-    print(f"Filtered (Kept) Count: {count_kept}")
-    print(f"Dropped (Delay=0) Count: {count_dropped}")
-
-    # Verification
-    if count_kept + count_dropped == subway_rows_before_delay_filter:
-        print("VERIFICATION PASSED: Kept + Dropped = Subway Total")
-    else:
-        print(
-            f"VERIFICATION FAILED: {count_kept} + {count_dropped} != {subway_rows_before_delay_filter}"
-        )
-
-    # 10. Save
-    print(f"\nSaving to {output_file}...")
-    df_kept.to_csv(output_file, index=False)
-
-    # Validation Summary File
-    with open("validation_summary.txt", "w", encoding="utf-8") as f:
-        f.write("--- Clean Data Verification ---\n")
-        f.write(f"Original Rows (all files): {total_original_rows}\n")
-        f.write(f"After Subway Line Filter: {subway_rows_before_delay_filter}\n")
-        f.write(f"Non-Subway Rows Removed: {rows_before_filter - rows_after_filter}\n")
-        f.write(f"Rows with Min Delay=0 (Dropped): {count_dropped}\n")
-        f.write(f"Final Saved Rows: {count_kept}\n")
-        f.write(
-            f"Verification: {'PASSED' if (count_kept + count_dropped == subway_rows_before_delay_filter) else 'FAILED'}\n\n"
-        )
-
-        f.write("--- Line Distribution ---\n")
-        f.write(df_kept["Line"].value_counts().to_string() + "\n\n")
-
-        f.write("--- Peak Hour Distribution ---\n")
-        if "Is Peak Hour" in df_kept.columns:
-            f.write(f"Peak Hour incidents: {df_kept['Is Peak Hour'].sum()}\n")
-            f.write(f"Off-Peak incidents: {(~df_kept['Is Peak Hour']).sum()}\n\n")
-
-        # Check for unknown codes in the FINAL set
-        unknowns = df_kept[df_kept["Code Description"].str.contains("Unknown Code")]
-        f.write(f"Rows with Unknown Codes (in final data): {len(unknowns)}\n")
-        if len(unknowns) > 0:
-            f.write(f"Unique Unknowns: {unknowns['Code'].unique()}\n")
-
-        f.write("\nSample Data:\n")
-        f.write(df_kept.head().to_string())
-
-    print("Done. Check validation_summary.txt.")
+    print(f"Saved cleaned dataset to {CLEANED_DATA_FILE}")
+    print(f"Saved validation report to {VALIDATION_REPORT_FILE}")
+    return CLEANED_DATA_FILE
 
 
 if __name__ == "__main__":

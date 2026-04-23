@@ -1,67 +1,105 @@
-# TTC Subway Delay Data Analysis (2024-2025) 🚇
+# TTC Analyst Portfolio Project
 
-## 📊 Project Overview
-This project provides a comprehensive analysis and cleaning of subway delay data from the Toronto Transit Commission (TTC) for the years 2024 and 2025. By implementing a **Relative Impact Score** model, we move beyond simple delay counts to reflect the actual "pain level" experienced by commuters, especially during peak hours.
+This project turns raw TTC subway delay logs into a reproducible analyst workflow with three deliverables:
 
----
+- a cleaned dataset for downstream analysis
+- text reports that explain the system and reliability metrics
+- interactive visuals and a lightweight Streamlit demo for interviews
 
-## 📈 Visual Analytics (English)
+The target audience is a hiring manager or interviewer reviewing a Data Analyst / BI portfolio in 3 to 5 minutes.
 
-### 0. System Dashboard
-![Dashboard](charts/00_dashboard.png)
-> High-level overview of total incidents, accumulated delay minutes, and average impact per incident.
+## Quick Start
 
-### 1. Line Performance Comparison
-![Line Comparison](charts/01_line_comparison.png)
-> **Insight**: Line 1 (YU) handles the highest volume of incidents, while Line 4 (Sheppard) remains the most reliable line in the system.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python run_pipeline.py
+streamlit run app.py
+```
 
-### 2. Monthly Delay Trend
-![Monthly Trend](charts/02_monthly_trend.png)
-> Tracking seasonal fluctuations and monthly performance across all lines.
+If you want to keep raw input files outside the repo root, place them in `data/raw/`.
 
-### 3. Hourly Delay Heatmap
-![Hourly Heatmap](charts/03_hourly_heatmap.png)
-> **Insight**: Deep red areas clearly identify morning and evening rush hours (Mon-Fri) as the high-risk periods for delays.
+## What The Pipeline Produces
 
-### 4. Station Reliability Rankings
-![Station Reliability](charts/04_station_reliability.png)
-> Identification of the "Most Reliable" vs. "Least Reliable" stations. Stations like `EGLINTON` and `KIPLING` currently show the lowest reliability scores.
+- Cleaned data: `data/processed/TTC_Subway_Delay_Data_Combined_Cleaned.csv`
+- Validation summary: `reports/validation_summary.txt`
+- Analysis report: `reports/analysis_results.txt`
+- Advanced metrics report: `reports/advanced_metrics_results.txt`
+- Interactive charts: `charts/00_dashboard.html` to `charts/06_delay_causes.html`
 
-### 5. Peak vs. Off-Peak Analysis
-![Peak Comparison](charts/05_peak_comparison.png)
+## Interview Flow
 
-### 6. Principal Delay Causes
-![Delay Causes](charts/06_delay_causes.png)
-> Root cause analysis using a sunburst distribution to visualize the impact of different delay codes.
+### 1. Business Question
+Where is the TTC subway system least reliable, when do delays hurt riders the most, and which causes create the biggest operational pain?
 
----
+### 2. Analytical Approach
+- Consolidate raw TTC delay files from CSV and Excel sources.
+- Standardize line names and station labels.
+- Remove zero-minute incidents from the final analytical dataset.
+- Apply a shared peak-hour rule across cleaning, metrics, and charts.
+- Score reliability with a weighted penalty model instead of raw counts alone.
 
-## 🔍 Advanced Reporting & Methodology
-We utilize a weighted Scoring model to evaluate system performance:
-- **Peak Hour Weighting (07:00-09:00, 16:00-19:00)**: Assigned a **1.5x multiplier** to reflect the higher social cost of delays during rush hour.
-- **Reliability Score**: Normalized from 0 to 100, where 0 represents the system's worst-performing entity and 100 represents theoretical perfection.
+### 3. Shared Business Rules
+- Peak windows: `07:00-09:00` and `16:00-19:00`
+- Peak-hour weight: `1.5x`
+- Subway scope: `Line 1`, `Line 2`, and `Line 4`
+- Station reliability filter: at least `50` incidents and no yard / track-area records
 
-### 2024 vs. 2025 Comparative Trends
-- **Incident Frequency**: 2025 has seen a **21.0% decrease** in total incidents compared to 2024.
-- **Total Delay Duration**: Decreased by **21.7%**.
-- **Average Impact Index**: Decreased slightly by **1.9%**, suggesting that while frequency is down, the severity of individual incidents remains consistent.
+These rules now live in shared configuration so every script uses the same definitions.
 
----
+## Key Insights
 
-## 🛠️ Data Pipeline
-1. **Consolidation**: Merged multi-format data (Excel/CSV) from 2024 and 2025.
-2. **Standardization**:
-    - Normalized station names (e.g., merging `WARDEN STATION` and `WARDEN`).
-    - Standardized abbreviations (e.g., `VMC` -> `VAUGHAN METROPOLITAN CENTRE`).
-3. **Refinement**: Filtered out non-revenue incidents (`Min Delay = 0`) and maintenance areas (`YARD`, `TAIL TRACK`).
-4. **Visualization**: Automated English-language reporting using Python & Plotly.
+- Line 1 carries the largest total delay burden and the highest incident volume.
+- Delay risk clusters around weekday commute windows, which is why the heatmap is a core evidence chart.
+- Reliability looks different when peak-hour pain is weighted: the ranking is not just about frequency, but rider impact.
 
----
+## Evidence To Show In Interviews
 
-## 🚀 Interactive Access
-The interactive HTML versions of these charts are available in the `charts/` directory. You can open them in any browser for full zoom and hover capabilities:
-- [Open Master Dashboard](charts/00_dashboard.html)
-- [Open Hourly Heatmap](charts/03_hourly_heatmap.html)
+- Main overview: [charts/00_dashboard.html](/Users/tim/Desktop/TTC-Analyst/charts/00_dashboard.html)
+- Peak risk evidence: [charts/03_hourly_heatmap.html](/Users/tim/Desktop/TTC-Analyst/charts/03_hourly_heatmap.html)
+- Reliability ranking: [charts/04_station_reliability.html](/Users/tim/Desktop/TTC-Analyst/charts/04_station_reliability.html)
+- Metrics report: [reports/advanced_metrics_results.txt](/Users/tim/Desktop/TTC-Analyst/reports/advanced_metrics_results.txt)
+- Interview talk track: [interview_talk_track.md](/Users/tim/Desktop/TTC-Analyst/interview_talk_track.md)
 
----
-*Last Updated: 2025-12-26*
+## Validation Baseline
+
+The versioned baseline reference is [validation_summary.txt](/Users/tim/Desktop/TTC-Analyst/validation_summary.txt). A fresh rerun should match these core figures:
+
+- Original rows loaded: `47,730`
+- Subway rows after line filter: `46,951`
+- Zero-delay rows dropped: `30,142`
+- Final saved rows: `16,809`
+- Peak-hour incidents: `4,872`
+- Unknown codes in final dataset: `0`
+
+Your new run writes the comparable output to [reports/validation_summary.txt](/Users/tim/Desktop/TTC-Analyst/reports/validation_summary.txt).
+
+## Project Structure
+
+```text
+.
+|-- app.py
+|-- run_pipeline.py
+|-- clean_data.py
+|-- analyze_delays.py
+|-- advanced_metrics.py
+|-- interactive_charts.py
+|-- project_config.py
+|-- pipeline_utils.py
+|-- data/
+|   |-- raw/
+|   `-- processed/
+|-- reports/
+`-- charts/
+```
+
+## Demo Notes
+
+The Streamlit app is intentionally lightweight:
+
+- KPI summary for fast scanning
+- evidence charts for line performance, time-of-day risk, and station reliability
+- short narrative blocks you can use as speaking prompts
+
+That keeps the portfolio focused on analyst storytelling instead of app complexity.

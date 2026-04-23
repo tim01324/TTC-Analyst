@@ -1,408 +1,362 @@
-"""
-TTC 地鐵延遲數據 - 互動式圖表生成器
-使用 Plotly 產生互動式 HTML 圖表
-"""
+from __future__ import annotations
+
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os
 
-# 檔案路徑
-data_dir = r"c:\Users\tim01\Desktop\TTC"
-cleaned_file = os.path.join(data_dir, "TTC_Subway_Delay_Data_Combined_Cleaned.csv")
-output_dir = os.path.join(data_dir, "charts")
+from pipeline_utils import (
+    calculate_station_reliability,
+    get_line_color,
+    load_cleaned_data,
+)
+from project_config import CHARTS_DIR
 
-# 建立輸出資料夾
-os.makedirs(output_dir, exist_ok=True)
 
-# 顏色主題
-COLORS = {
-    "Line 1 Yonge-University": "#FFCC00",  # 黃色
-    "Line 2 Bloor-Danforth": "#00A859",    # 綠色
-    "Line 4 Sheppard": "#A349A4",          # 紫色
-}
+def write_chart(fig: go.Figure, filename: str) -> None:
+    html_path = CHARTS_DIR / f"{filename}.html"
+    png_path = CHARTS_DIR / f"{filename}.png"
 
-def load_data():
-    """載入並預處理數據"""
+    fig.write_html(html_path)
     try:
-        df = pd.read_csv(cleaned_file, encoding="utf-8")
-    except:
-        df = pd.read_csv(cleaned_file, encoding="cp1252")
-    
-    df["Date"] = pd.to_datetime(df["Date"])
-    df["Min Delay"] = pd.to_numeric(df["Min Delay"], errors="coerce").fillna(0)
-    df["Month"] = df["Date"].dt.to_period("M").astype(str)
-    df["DayOfWeek"] = df["Date"].dt.day_name()
-    df["Hour"] = df["Time"].apply(lambda x: int(str(x).split(":")[0]) if pd.notna(x) else 0)
-    
-    # 尖峰時段加權
-    if "Is Peak Hour" not in df.columns:
-        df["Is Peak Hour"] = df["Hour"].apply(lambda h: (7 <= h < 9) or (16 <= h < 19))
-    
-    df["Peak Weight"] = df["Is Peak Hour"].apply(lambda x: 1.5 if x else 1.0)
-    df["Weighted Delay"] = df["Min Delay"] * df["Peak Weight"]
-    
-    return df
+        fig.write_image(png_path, scale=2)
+    except Exception as exc:  # pragma: no cover - depends on local image engine
+        print(f"Skipped PNG export for {filename}: {exc}")
+
+    print(f"Saved {html_path}")
 
 
-def chart_line_comparison(df):
-    """圖表 1: 路線延遲比較 (柱狀圖 + 餅圖)"""
-    
-    line_stats = df.groupby("Line").agg({
-        "Min Delay": ["sum", "count", "mean"],
-        "Weighted Delay": "sum"
-    }).reset_index()
-    line_stats.columns = ["Line", "Total Delay", "Incident Count", "Avg Delay", "Weighted Penalty"]
-    
-    fig = make_subplots(
-        rows=1, cols=2,
-        specs=[[{"type": "bar"}, {"type": "pie"}]],
-        subplot_titles=("Total Delay Minutes", "Incident Distribution")
-    )
-    
-    # 柱狀圖
-    fig.add_trace(
-        go.Bar(
-            x=line_stats["Line"],
-            y=line_stats["Total Delay"],
-            marker_color=[COLORS.get(line, "#888") for line in line_stats["Line"]],
-            text=line_stats["Total Delay"].apply(lambda x: f"{x:,.0f}"),
-            textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Total Delay: %{y:,.0f} min<extra></extra>"
-        ),
-        row=1, col=1
-    )
-    
-    # 餅圖
-    fig.add_trace(
-        go.Pie(
-            labels=line_stats["Line"],
-            values=line_stats["Incident Count"],
-            marker_colors=[COLORS.get(line, "#888") for line in line_stats["Line"]],
-            textinfo="percent+label",
-            hovertemplate="<b>%{label}</b><br>Incidents: %{value}<br>Percent: %{percent}<extra></extra>"
-        ),
-        row=1, col=2
-    )
-    
-    fig.update_layout(
-        title_text="🚇 TTC Subway Line Delay Analysis",
-        title_font_size=24,
-        showlegend=False,
-        height=500
-    )
-    
-    fig.write_html(os.path.join(output_dir, "01_line_comparison.html"))
-    print("[OK] Chart 1: Line Comparison generated")
-
-
-def chart_monthly_trend(df):
-    """圖表 2: 月度趨勢圖"""
-    
-    monthly = df.groupby(["Month", "Line"]).agg({
-        "Min Delay": "sum",
-        "Date": "count"
-    }).reset_index()
-    monthly.columns = ["Month", "Line", "Total Delay", "Incident Count"]
-    
-    fig = px.line(
-        monthly,
-        x="Month",
-        y="Total Delay",
-        color="Line",
-        color_discrete_map=COLORS,
-        markers=True,
-        title="📈 Monthly Delay Trend",
-        labels={"Total Delay": "Total Delay (min)", "Month": "Month"}
-    )
-    
-    fig.update_layout(
-        hovermode="x unified",
-        legend_title_text="Line",
-        height=500
-    )
-    
-    fig.write_html(os.path.join(output_dir, "02_monthly_trend.html"))
-    print("[OK] Chart 2: Monthly Trend generated")
-
-
-def chart_hourly_heatmap(df):
-    """圖表 3: 時段熱力圖"""
-    
-    # 星期排序
-    day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    
-    hourly = df.groupby(["DayOfWeek", "Hour"])["Min Delay"].sum().reset_index()
-    hourly_pivot = hourly.pivot(index="DayOfWeek", columns="Hour", values="Min Delay").fillna(0)
-    
-    # 按星期排序
-    hourly_pivot = hourly_pivot.reindex(day_order)
-    
-    fig = px.imshow(
-        hourly_pivot,
-        labels=dict(x="Hour", y="Day", color="Delay (min)"),
-        x=[f"{h:02d}:00" for h in hourly_pivot.columns],
-        y=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-        color_continuous_scale="YlOrRd",
-        title="🔥 Delay Heatmap (Day × Hour)"
-    )
-    
-    fig.update_layout(height=400)
-    
-    fig.write_html(os.path.join(output_dir, "03_hourly_heatmap.html"))
-    print("[OK] Chart 3: Hourly Heatmap generated")
-
-
-def chart_station_reliability(df):
-    """圖表 4: 車站可靠性排名 (水平柱狀圖)"""
-    
-    # 過濾條件
-    MIN_INCIDENTS = 50
-    EXCLUDE_KEYWORDS = ["APPROACHING", " TO ", "BUILDING", "TRACK LEVEL", "CENTRE TRACK"]
-    
-    station_stats = df.groupby("Station").agg({
-        "Weighted Delay": "sum",
-        "Min Delay": "count"
-    }).reset_index()
-    station_stats.columns = ["Station", "Weighted Penalty", "Incident Count"]
-    
-    # 過濾
-    def is_valid(name):
-        for kw in EXCLUDE_KEYWORDS:
-            if kw in str(name).upper():
-                return False
-        return True
-    
-    station_stats = station_stats[
-        (station_stats["Incident Count"] >= MIN_INCIDENTS) &
-        (station_stats["Station"].apply(is_valid))
-    ]
-    
-    max_penalty = station_stats["Weighted Penalty"].max()
-    station_stats["Reliability Score"] = 100 - (station_stats["Weighted Penalty"] / max_penalty * 100)
-    
-    # Top 15 最差 + Top 15 最好
-    worst = station_stats.nsmallest(15, "Reliability Score")
-    best = station_stats.nlargest(15, "Reliability Score")
-    
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=("⚠️ 15 Least Reliable Stations", "✅ 15 Most Reliable Stations"),
-        horizontal_spacing=0.15
-    )
-    
-    # 最差
-    fig.add_trace(
-        go.Bar(
-            y=worst["Station"],
-            x=worst["Reliability Score"],
-            orientation="h",
-            marker_color="crimson",
-            text=worst["Reliability Score"].apply(lambda x: f"{x:.1f}"),
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>Reliability: %{x:.1f}<extra></extra>"
-        ),
-        row=1, col=1
-    )
-    
-    # 最好
-    fig.add_trace(
-        go.Bar(
-            y=best["Station"],
-            x=best["Reliability Score"],
-            orientation="h",
-            marker_color="seagreen",
-            text=best["Reliability Score"].apply(lambda x: f"{x:.1f}"),
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>Reliability: %{x:.1f}<extra></extra>"
-        ),
-        row=1, col=2
-    )
-    
-    fig.update_layout(
-        title_text="🏆 Station Reliability Ranking (Filtered)",
-        height=600,
-        showlegend=False
-    )
-    
-    fig.update_xaxes(range=[0, 100])
-    
-    fig.write_html(os.path.join(output_dir, "04_station_reliability.html"))
-    print("[OK] Chart 4: Station Reliability generated")
-
-
-def chart_peak_comparison(df):
-    """圖表 5: 尖峰 vs 離峰比較"""
-    
-    peak_stats = df.groupby("Is Peak Hour").agg({
-        "Min Delay": ["sum", "count", "mean"]
-    }).reset_index()
-    peak_stats.columns = ["Is Peak Hour", "Total Delay", "Incident Count", "Avg Delay"]
-    peak_stats["Period"] = peak_stats["Is Peak Hour"].apply(
-        lambda x: "Peak (07-09, 16-19)" if x else "Off-Peak"
-    )
-    
-    fig = make_subplots(
-        rows=1, cols=3,
-        specs=[[{"type": "pie"}, {"type": "bar"}, {"type": "bar"}]],
-        subplot_titles=("Incident Distribution", "Total Delay", "Avg Delay/Incident")
-    )
-    
-    colors = ["#FF6B6B", "#4ECDC4"]
-    
-    fig.add_trace(
-        go.Pie(
-            labels=peak_stats["Period"],
-            values=peak_stats["Incident Count"],
-            marker_colors=colors,
-            textinfo="percent+label"
-        ),
-        row=1, col=1
-    )
-    
-    fig.add_trace(
-        go.Bar(
-            x=peak_stats["Period"],
-            y=peak_stats["Total Delay"],
-            marker_color=colors,
-            text=peak_stats["Total Delay"].apply(lambda x: f"{x:,.0f}"),
-            textposition="outside"
-        ),
-        row=1, col=2
-    )
-    
-    fig.add_trace(
-        go.Bar(
-            x=peak_stats["Period"],
-            y=peak_stats["Avg Delay"],
-            marker_color=colors,
-            text=peak_stats["Avg Delay"].apply(lambda x: f"{x:.1f}"),
-            textposition="outside"
-        ),
-        row=1, col=3
-    )
-    
-    fig.update_layout(
-        title_text="⏰ Peak vs Off-Peak Analysis",
-        height=400,
-        showlegend=False
-    )
-    
-    fig.write_html(os.path.join(output_dir, "05_peak_comparison.html"))
-    print("[OK] Chart 5: Peak Comparison generated")
-
-
-def chart_delay_causes(df):
-    """圖表 6: 延遲原因分析 (Sunburst)"""
-    
-    cause_stats = df.groupby("Code Description").agg({
-        "Min Delay": ["sum", "count"]
-    }).reset_index()
-    cause_stats.columns = ["Cause", "Total Delay", "Count"]
-    cause_stats = cause_stats.nlargest(15, "Total Delay")
-    
-    fig = px.sunburst(
-        cause_stats,
-        path=["Cause"],
-        values="Total Delay",
-        color="Total Delay",
-        color_continuous_scale="Reds",
-        title="🔍 Top 15 Delay Causes (by Total Duration)"
-    )
-    
-    fig.update_layout(height=600)
-    fig.update_traces(
-        hovertemplate="<b>%{label}</b><br>Total Delay: %{value:,.0f} min<extra></extra>"
-    )
-    
-    fig.write_html(os.path.join(output_dir, "06_delay_causes.html"))
-    print("[OK] Chart 6: Delay Causes generated")
-
-
-def create_dashboard(df):
-    """圖表 7: 綜合儀表板"""
-    
-    # 統計數據
+def create_dashboard(df: pd.DataFrame) -> go.Figure:
     total_incidents = len(df)
     total_delay = df["Min Delay"].sum()
     avg_delay = df["Min Delay"].mean()
-    peak_incidents = df["Is Peak Hour"].sum()
-    
+    peak_incidents = int(df["Is Peak Hour"].sum())
+
     fig = make_subplots(
-        rows=2, cols=2,
+        rows=2,
+        cols=2,
         specs=[
             [{"type": "indicator"}, {"type": "indicator"}],
-            [{"type": "indicator"}, {"type": "indicator"}]
+            [{"type": "indicator"}, {"type": "indicator"}],
         ],
-        subplot_titles=("Total Incidents", "Total Delay Time", "Average Delay", "Peak Hour Incidents")
+        subplot_titles=(
+            "Total Incidents",
+            "Total Delay Time",
+            "Average Delay",
+            "Peak-Hour Incidents",
+        ),
     )
-    
-    # 指標卡
-    fig.add_trace(go.Indicator(
-        mode="number",
-        value=total_incidents,
-        number={"font": {"size": 60, "color": "#2C3E50"}},
-        title={"text": "Incidents", "font": {"size": 20}}
-    ), row=1, col=1)
-    
-    fig.add_trace(go.Indicator(
-        mode="number",
-        value=total_delay,
-        number={"font": {"size": 60, "color": "#E74C3C"}, "suffix": " min"},
-        title={"text": "", "font": {"size": 20}}
-    ), row=1, col=2)
-    
-    fig.add_trace(go.Indicator(
-        mode="number",
-        value=avg_delay,
-        number={"font": {"size": 60, "color": "#3498DB"}, "suffix": " min/inc"},
-        title={"text": "", "font": {"size": 20}}
-    ), row=2, col=1)
-    
-    fig.add_trace(go.Indicator(
-        mode="number",
-        value=peak_incidents,
-        number={"font": {"size": 60, "color": "#F39C12"}},
-        title={"text": f"({peak_incidents/total_incidents*100:.1f}%)", "font": {"size": 20}}
-    ), row=2, col=2)
-    
+
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=total_incidents,
+            number={"font": {"size": 60, "color": "#243B53"}},
+            title={"text": "Incidents", "font": {"size": 18}},
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=total_delay,
+            number={"font": {"size": 60, "color": "#C05621"}, "suffix": " min"},
+            title={"text": "Total Delay", "font": {"size": 18}},
+        ),
+        row=1,
+        col=2,
+    )
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=avg_delay,
+            number={"font": {"size": 60, "color": "#2B6CB0"}, "suffix": " min"},
+            title={"text": "Avg Delay / Incident", "font": {"size": 18}},
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=peak_incidents,
+            number={"font": {"size": 60, "color": "#D69E2E"}},
+            title={
+                "text": f"{peak_incidents / total_incidents * 100:.1f}% of incidents",
+                "font": {"size": 18},
+            },
+        ),
+        row=2,
+        col=2,
+    )
+
     fig.update_layout(
-        title_text="📊 TTC Subway Delay Overview",
+        title_text="TTC Subway Delay Overview",
         title_font_size=28,
-        height=500
+        template="plotly_white",
+        height=520,
     )
-    
-    fig.write_html(os.path.join(output_dir, "00_dashboard.html"))
-    print("[OK] Chart 0: Dashboard generated")
+    return fig
 
 
-def main():
-    print("=" * 50)
-    print("  TTC 互動式圖表生成器")
-    print("=" * 50)
-    
-    print("\n載入數據...")
-    df = load_data()
-    print(f"已載入 {len(df)} 筆資料\n")
-    
-    print("生成圖表中...\n")
-    
-    create_dashboard(df)
-    chart_line_comparison(df)
-    chart_monthly_trend(df)
-    chart_hourly_heatmap(df)
-    chart_station_reliability(df)
-    chart_peak_comparison(df)
-    chart_delay_causes(df)
-    
-    print("\n" + "=" * 50)
-    print(f"All charts saved to: {output_dir}")
-    print("=" * 50)
-    print("\nOpen HTML files in browser to view interactive charts!")
+def chart_line_comparison(df: pd.DataFrame) -> go.Figure:
+    line_stats = (
+        df.groupby("Line")
+        .agg(
+            total_delay=("Min Delay", "sum"),
+            incident_count=("Min Delay", "count"),
+            avg_delay=("Min Delay", "mean"),
+            weighted_penalty=("Weighted Delay", "sum"),
+        )
+        .reset_index()
+    )
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        specs=[[{"type": "bar"}, {"type": "pie"}]],
+        subplot_titles=("Total Delay Minutes", "Incident Distribution"),
+    )
+    fig.add_trace(
+        go.Bar(
+            x=line_stats["Line"],
+            y=line_stats["total_delay"],
+            marker_color=[get_line_color(line) for line in line_stats["Line"]],
+            text=line_stats["total_delay"].apply(lambda value: f"{value:,.0f}"),
+            textposition="outside",
+            hovertemplate="<b>%{x}</b><br>Total delay: %{y:,.0f} min<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Pie(
+            labels=line_stats["Line"],
+            values=line_stats["incident_count"],
+            marker_colors=[get_line_color(line) for line in line_stats["Line"]],
+            textinfo="percent+label",
+            hovertemplate="<b>%{label}</b><br>Incidents: %{value}<extra></extra>",
+        ),
+        row=1,
+        col=2,
+    )
+    fig.update_layout(
+        title_text="Delay by Line",
+        template="plotly_white",
+        showlegend=False,
+        height=500,
+    )
+    return fig
+
+
+def chart_monthly_trend(df: pd.DataFrame) -> go.Figure:
+    monthly = (
+        df.groupby(["Month", "Line"])
+        .agg(total_delay=("Min Delay", "sum"), incident_count=("Date", "count"))
+        .reset_index()
+    )
+
+    fig = px.line(
+        monthly,
+        x="Month",
+        y="total_delay",
+        color="Line",
+        color_discrete_map={
+            line_name: get_line_color(line_name) for line_name in monthly["Line"].unique()
+        },
+        markers=True,
+        title="Monthly Delay Trend",
+        labels={"total_delay": "Total Delay (min)", "Month": "Month"},
+    )
+    fig.update_layout(template="plotly_white", hovermode="x unified", height=500)
+    return fig
+
+
+def chart_hourly_heatmap(df: pd.DataFrame) -> go.Figure:
+    day_order = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+
+    hourly = df.groupby(["DayOfWeek", "Hour"])["Min Delay"].sum().reset_index()
+    pivot = hourly.pivot(index="DayOfWeek", columns="Hour", values="Min Delay").fillna(0)
+    pivot = pivot.reindex(day_order)
+
+    fig = px.imshow(
+        pivot,
+        labels={"x": "Hour", "y": "Day", "color": "Delay (min)"},
+        x=[f"{hour:02d}:00" for hour in pivot.columns],
+        y=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        color_continuous_scale="YlOrRd",
+        title="Delay Heatmap by Day and Hour",
+    )
+    fig.update_layout(template="plotly_white", height=420)
+    return fig
+
+
+def chart_station_reliability(df: pd.DataFrame) -> go.Figure:
+    station_stats = calculate_station_reliability(df)
+    worst = station_stats.nsmallest(15, "reliability_score")
+    best = station_stats.nlargest(15, "reliability_score")
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=("15 Least Reliable Stations", "15 Most Reliable Stations"),
+        horizontal_spacing=0.18,
+    )
+    fig.add_trace(
+        go.Bar(
+            y=worst["Station"],
+            x=worst["reliability_score"],
+            orientation="h",
+            marker_color="#C53030",
+            text=worst["reliability_score"].apply(lambda value: f"{value:.1f}"),
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>Reliability: %{x:.1f}<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            y=best["Station"],
+            x=best["reliability_score"],
+            orientation="h",
+            marker_color="#2F855A",
+            text=best["reliability_score"].apply(lambda value: f"{value:.1f}"),
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>Reliability: %{x:.1f}<extra></extra>",
+        ),
+        row=1,
+        col=2,
+    )
+    fig.update_layout(
+        title_text="Station Reliability Ranking",
+        template="plotly_white",
+        showlegend=False,
+        height=650,
+    )
+    fig.update_xaxes(range=[0, 100])
+    return fig
+
+
+def chart_peak_comparison(df: pd.DataFrame) -> go.Figure:
+    peak_stats = (
+        df.groupby("Is Peak Hour")
+        .agg(
+            total_delay=("Min Delay", "sum"),
+            incident_count=("Min Delay", "count"),
+            avg_delay=("Min Delay", "mean"),
+        )
+        .reset_index()
+    )
+    peak_stats["Period"] = peak_stats["Is Peak Hour"].map(
+        {True: "Peak (07-09, 16-19)", False: "Off-Peak"}
+    )
+
+    colors = ["#E76F51", "#2A9D8F"]
+    fig = make_subplots(
+        rows=1,
+        cols=3,
+        specs=[[{"type": "pie"}, {"type": "bar"}, {"type": "bar"}]],
+        subplot_titles=("Incident Share", "Total Delay", "Average Delay"),
+    )
+    fig.add_trace(
+        go.Pie(
+            labels=peak_stats["Period"],
+            values=peak_stats["incident_count"],
+            marker_colors=colors,
+            textinfo="percent+label",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=peak_stats["Period"],
+            y=peak_stats["total_delay"],
+            marker_color=colors,
+            text=peak_stats["total_delay"].apply(lambda value: f"{value:,.0f}"),
+            textposition="outside",
+        ),
+        row=1,
+        col=2,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=peak_stats["Period"],
+            y=peak_stats["avg_delay"],
+            marker_color=colors,
+            text=peak_stats["avg_delay"].apply(lambda value: f"{value:.1f}"),
+            textposition="outside",
+        ),
+        row=1,
+        col=3,
+    )
+    fig.update_layout(
+        title_text="Peak vs Off-Peak Comparison",
+        template="plotly_white",
+        showlegend=False,
+        height=430,
+    )
+    return fig
+
+
+def chart_delay_causes(df: pd.DataFrame) -> go.Figure:
+    cause_stats = (
+        df.groupby("Code Description")
+        .agg(total_delay=("Min Delay", "sum"), incident_count=("Min Delay", "count"))
+        .reset_index()
+        .nlargest(15, "total_delay")
+        .rename(columns={"Code Description": "Cause"})
+    )
+
+    fig = px.sunburst(
+        cause_stats,
+        path=["Cause"],
+        values="total_delay",
+        color="total_delay",
+        color_continuous_scale="Reds",
+        title="Top 15 Delay Causes by Total Duration",
+    )
+    fig.update_layout(template="plotly_white", height=620)
+    fig.update_traces(
+        hovertemplate="<b>%{label}</b><br>Total delay: %{value:,.0f} min<extra></extra>"
+    )
+    return fig
+
+
+def build_all_charts(df: pd.DataFrame) -> list[tuple[str, go.Figure]]:
+    return [
+        ("00_dashboard", create_dashboard(df)),
+        ("01_line_comparison", chart_line_comparison(df)),
+        ("02_monthly_trend", chart_monthly_trend(df)),
+        ("03_hourly_heatmap", chart_hourly_heatmap(df)),
+        ("04_station_reliability", chart_station_reliability(df)),
+        ("05_peak_comparison", chart_peak_comparison(df)),
+        ("06_delay_causes", chart_delay_causes(df)),
+    ]
+
+
+def main() -> Path:
+    CHARTS_DIR.mkdir(parents=True, exist_ok=True)
+    df = load_cleaned_data()
+
+    for filename, figure in build_all_charts(df):
+        write_chart(figure, filename)
+
+    print(f"All charts saved to {CHARTS_DIR}")
+    return CHARTS_DIR
 
 
 if __name__ == "__main__":
     main()
-
